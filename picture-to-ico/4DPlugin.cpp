@@ -45,125 +45,6 @@ void CommandDispatcher (PA_long32 pProcNum, sLONG_PTR *pResult, PackagePtr pPara
 
 // -------------------------------- PICTURE TO ICO --------------------------------
 
-void getBMP(PA_Picture *picture, std::vector<uint8_t> &buf)
-{
-	size_t _w = 0;
-	size_t _h = 0;
-#if VERSIONMAC
-	CGImageRef image = (CGImageRef)PA_CreateNativePictureForScreen(*picture);
-#else
-	Gdiplus::Bitmap *image = (Gdiplus::Bitmap *)PA_CreateNativePictureForScreen(*picture);
-#endif
-	buf.clear();
-	if(image)
-	{
-#if VERSIONMAC
-		
-		_w = CGImageGetWidth(image);
-		_h = CGImageGetHeight(image);
-		
-		size_t size = _w * _h;
-		buf.resize(size);
-		
-		CGContextRef ctx = NULL;
-		CGColorSpaceRef colorSpace = NULL;
-		
-		size_t bitmapBytesPerRow   = (_w * 4);
-		size_t bitmapByteCount     = (bitmapBytesPerRow * _h);
-		
-		std::vector<uint8_t> bitmapData(bitmapByteCount);
-		
-		colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceGenericRGB);
-		
-		if (colorSpace)
-		{
-			ctx = CGBitmapContextCreate ((void *)&bitmapData[0],
-																	 _w,
-																	 _h,
-																	 8,      // bits per component
-																	 bitmapBytesPerRow,
-																	 colorSpace,
-																	 kCGImageAlphaPremultipliedFirst);
-			
-			CGColorSpaceRelease(colorSpace);
-			
-		}
-		
-		if (ctx)
-		{
-			CGRect rect = {{0,0},{_w,_h}};
-			
-			CGContextDrawImage(ctx, rect, image);
-			
-			size_t *pixels = (size_t *)CGBitmapContextGetData (ctx);
-			
-			size_t pixel, y8;
-			size_t i = 0;
-#if __LP64__
-			BOOL alt = false;
-			size_t j = 0;
-#endif
-			for(size_t y = 0; y < _h; y++)
-			{
-				for(size_t x = 0; x < _w; x++)
-				{
-#if __LP64__
-					if(!alt)
-					{
-						pixel = pixels[j];
-						y8 = (pixel >> 24) & 0xFF;
-					}
-					else
-					{
-						pixel = pixels[j];
-						y8 = (pixel >> 56) & 0xFF;
-						j++;
-					}
-					buf[i] = y8;
-					i++;
-					alt = !alt;
-#else
-					pixel = pixels[i];
-					y8 = (pixel >> 24) & 0xFF;
-					buf[i] = y8;
-					i++;
-#endif
-				}
-			}
-			CGContextRelease(ctx);
-		}
-		
-#else
-		_w = image->GetWidth();
-		_h = image->GetHeight();
-		
-		size_t size = _w * _h;
-		std::vector<uint8_t> buf(size);
-		
-		uint32_t y8;
-		size_t i = 0;
-		
-		for(size_t y = 0; y < _h; y++)
-		{
-			PA_YieldAbsolute();
-			for(size_t x = 0; x < _w; x++)
-			{
-				Gdiplus::Color c;
-				image->GetPixel(x,y,&c);
-				y8 = c.GetR();
-				buf[i] = y8;
-				i++;
-			}
-		}
-#endif
-#if VERSIONMAC
-		CGImageRelease(image); image = NULL;
-#else
-		delete image; image = NULL;
-#endif
-	}
-}
-
 void getPNG(PA_Picture *picture, std::vector<uint8_t> &buf)
 {
 	std::string type(".png");
@@ -221,6 +102,11 @@ void getPNG(PA_Picture *picture, std::vector<uint8_t> &buf)
 			PA_DisposeHandle(h);
 		}
 	}
+}
+
+void getBMP(PA_Picture *picture, std::vector<uint8_t> &buf)
+{
+	getPNG(picture, buf);
 }
 
 #pragma mark -
