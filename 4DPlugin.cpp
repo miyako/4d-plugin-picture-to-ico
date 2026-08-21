@@ -99,8 +99,10 @@ void getPNG(PA_Picture *picture, std::vector<uint8_t> &buf)
 			buf.resize(insize);
 			memcpy(&buf[0], (const void *)PA_LockHandle(h), insize);
 			PA_UnlockHandle(h);
-			PA_DisposeHandle(h);
 		}
+		// h is always disposed, whether or not PA_GetPictureData succeeded above
+		// (previously only disposed on the success path, leaking one handle per failure).
+		PA_DisposeHandle(h);
 	}
 }
 
@@ -111,7 +113,41 @@ void getBMP(PA_Picture *picture, std::vector<uint8_t> &buf)
 
 #pragma mark -
 
-void getIcons(PA_Picture *picture,
+// Resizes *picture into outIcon at outSize x outSize using the 4D scale command.
+// Returns false (and leaves outIcon untouched) if the scale command reports an error,
+// so the caller can stop instead of feeding a possibly-invalid picture into getPNG.
+static bool scaleOneIcon(PA_Picture *picture, PA_long32 outSize, PA_Picture &outIcon)
+{
+	PA_Variable args[4];
+	args[0] = PA_CreateVariable(eVK_Picture);
+	args[1] = PA_CreateVariable(eVK_Picture);
+	args[2] = PA_CreateVariable(eVK_Longint);
+	args[3] = PA_CreateVariable(eVK_Longint);
+
+	PA_SetPictureVariable(&args[0], PA_DuplicatePicture(*picture, 1));
+	PA_SetLongintVariable(&args[2], outSize);
+	PA_SetLongintVariable(&args[3], outSize);
+
+	PA_ExecuteCommandByID(kCommandID_PICTURE_SCALED_SIZE, args, 4);
+	bool ok = (PA_GetLastError() == eER_NoErr);
+	if (ok)
+	{
+		outIcon = PA_DuplicatePicture(PA_GetPictureVariable(args[1]), 1);
+	}
+
+	PA_ClearVariable(&args[0]);
+	PA_ClearVariable(&args[1]);
+	PA_ClearVariable(&args[2]);
+	PA_ClearVariable(&args[3]);
+
+	return ok;
+}
+
+// Returns false if any size failed to scale and/or produced no PNG data, in which case
+// none of the pngNN output vectors should be trusted (caller must not proceed to build
+// the .ico from them — previously an empty vector here would reach &vec[0] undefined
+// behavior downstream in PICTURE_TO_ICO).
+bool getIcons(PA_Picture *picture,
 										std::vector<uint8_t> &png16,
 										std::vector<uint8_t> &png32,
 										std::vector<uint8_t> &png48,
@@ -120,81 +156,42 @@ void getIcons(PA_Picture *picture,
 										std::vector<uint8_t> &png256)
 {
 	//96 is automatically rendered by windows
-	PA_Picture icon16, icon32, icon48, icon64, icon128, icon256;
-	
-	PA_Variable args[4];
-	
-	args[0] = PA_CreateVariable(eVK_Picture);
-	args[2] = PA_CreateVariable(eVK_Longint);
-	args[3] = PA_CreateVariable(eVK_Longint);
-	
-	PA_SetPictureVariable(&args[0], PA_DuplicatePicture(*picture, 1));
-	
-	//Small
-	args[1] = PA_CreateVariable(eVK_Picture);
-	PA_SetLongintVariable(&args[2], 16);
-	PA_SetLongintVariable(&args[3], 16);
-	PA_ExecuteCommandByID(679, args, 4);
-	icon16 = PA_DuplicatePicture(PA_GetPictureVariable(args[1]), 1);
-	PA_ClearVariable(&args[1]);
-	
-	//
-	args[1] = PA_CreateVariable(eVK_Picture);
-	PA_SetLongintVariable(&args[2], 32);
-	PA_SetLongintVariable(&args[3], 32);
-	PA_ExecuteCommandByID(679, args, 4);
-	icon32 = PA_DuplicatePicture(PA_GetPictureVariable(args[1]), 1);
-	PA_ClearVariable(&args[1]);
-	
-	//Medium
-	args[1] = PA_CreateVariable(eVK_Picture);
-	PA_SetLongintVariable(&args[2], 48);
-	PA_SetLongintVariable(&args[3], 48);
-	PA_ExecuteCommandByID(679, args, 4);
-	icon48 = PA_DuplicatePicture(PA_GetPictureVariable(args[1]), 1);
-	PA_ClearVariable(&args[1]);
-	
-	//
-	args[1] = PA_CreateVariable(eVK_Picture);
-	PA_SetLongintVariable(&args[2], 64);
-	PA_SetLongintVariable(&args[3], 64);
-	PA_ExecuteCommandByID(679, args, 4);
-	icon64 = PA_DuplicatePicture(PA_GetPictureVariable(args[1]), 1);
-	PA_ClearVariable(&args[1]);
+	// Zero-initialized: if scaleOneIcon fails partway through the chain below,
+	// any icon not yet assigned must read as "nothing to dispose", not garbage.
+	PA_Picture icon16 = 0, icon32 = 0, icon48 = 0, icon64 = 0, icon128 = 0, icon256 = 0;
 
-	//
-	args[1] = PA_CreateVariable(eVK_Picture);
-	PA_SetLongintVariable(&args[2], 128);
-	PA_SetLongintVariable(&args[3], 128);
-	PA_ExecuteCommandByID(679, args, 4);
-	icon128 = PA_DuplicatePicture(PA_GetPictureVariable(args[1]), 1);
-	PA_ClearVariable(&args[1]);
-	
-	//Extra Large
-	args[1] = PA_CreateVariable(eVK_Picture);
-	PA_SetLongintVariable(&args[2], 256);
-	PA_SetLongintVariable(&args[3], 256);
-	PA_ExecuteCommandByID(679, args, 4);
-	icon256 = PA_DuplicatePicture(PA_GetPictureVariable(args[1]), 1);
-	PA_ClearVariable(&args[1]);
-	
-	PA_ClearVariable(&args[0]);
-	PA_ClearVariable(&args[2]);
-	PA_ClearVariable(&args[3]);
-	
-	getPNG(&icon16,  png16);
-	getPNG(&icon32,  png32);
-	getPNG(&icon48,  png48);
-	getPNG(&icon64,  png64);
-	getPNG(&icon128, png128);
-	getPNG(&icon256, png256);
-	
-	PA_DisposePicture(icon16);
-	PA_DisposePicture(icon32);
-	PA_DisposePicture(icon48);
-	PA_DisposePicture(icon64);
-	PA_DisposePicture(icon128);
-	PA_DisposePicture(icon256);
+	bool ok = true;
+	ok = ok && scaleOneIcon(picture, 16,  icon16);
+	ok = ok && scaleOneIcon(picture, 32,  icon32);
+	ok = ok && scaleOneIcon(picture, 48,  icon48);
+	ok = ok && scaleOneIcon(picture, 64,  icon64);
+	ok = ok && scaleOneIcon(picture, 128, icon128);
+	ok = ok && scaleOneIcon(picture, 256, icon256);
+
+	if (ok)
+	{
+		getPNG(&icon16,  png16);
+		getPNG(&icon32,  png32);
+		getPNG(&icon48,  png48);
+		getPNG(&icon64,  png64);
+		getPNG(&icon128, png128);
+		getPNG(&icon256, png256);
+
+		// getPNG can still legitimately come back empty (e.g. no ".png" entry found)
+		// even when the scale command itself reported no error — guard that too.
+		ok = !png16.empty()  && !png32.empty()  && !png48.empty() &&
+				 !png64.empty()  && !png128.empty() && !png256.empty();
+	}
+
+	// Dispose whichever icons were actually produced, success or not.
+	if (icon16)  PA_DisposePicture(icon16);
+	if (icon32)  PA_DisposePicture(icon32);
+	if (icon48)  PA_DisposePicture(icon48);
+	if (icon64)  PA_DisposePicture(icon64);
+	if (icon128) PA_DisposePicture(icon128);
+	if (icon256) PA_DisposePicture(icon256);
+
+	return ok;
 }
 
 void PICTURE_TO_ICO(sLONG_PTR *pResult, PackagePtr pParams)
@@ -207,23 +204,40 @@ void PICTURE_TO_ICO(sLONG_PTR *pResult, PackagePtr pParams)
 	args[0] = PA_CreateVariable(eVK_Picture);
 	args[1] = PA_CreateVariable(eVK_Unistring);
 	PA_SetPictureVariable(&args[0], PA_DuplicatePicture(picture, 1));
-	PA_Unistring u = PA_CreateUnistring((PA_Unichar *)".\0p\0n\0g\0\0\0");
+	// Compiler-verified UTF-16 literal (previously a hand-built interleaved-null
+	// narrow-string literal cast to PA_Unichar* — correct today, but a single
+	// miscounted '\0' would have silently produced a wrong/garbage string with
+	// no compiler diagnostic).
+	static const char16_t kPngExt[] = u".png";
+	PA_Unistring u = PA_CreateUnistring((PA_Unichar *)kPngExt);
 	PA_SetStringVariable(&args[1], &u);
-	PA_ExecuteCommandByID(1002, args, 2);
+	PA_ExecuteCommandByID(kCommandID_SET_PICTURE_FORMAT, args, 2);
+	bool convertedToPNG = (PA_GetLastError() == eER_NoErr);
 	picture = PA_DuplicatePicture(PA_GetPictureVariable(args[0]), 1);
 	PA_ClearVariable(&args[0]);
 	PA_ClearVariable(&args[1]);
-	
+
 	std::vector<uint8_t> png16;
 	std::vector<uint8_t> png32;
 	std::vector<uint8_t> png48;
 	std::vector<uint8_t> png64;
 	std::vector<uint8_t> png128;
 	std::vector<uint8_t> png256;
-	
-	getIcons(&picture, png16, png32, png48, png64, png128, png256);
-	
+
+	bool ok = convertedToPNG &&
+		getIcons(&picture, png16, png32, png48, png64, png128, png256);
+
 	PA_DisposePicture(picture);
+
+	if (!ok)
+	{
+		// Conversion or one of the scaled sizes failed upstream: leave the output
+		// BLOB empty rather than falling through to build a corrupt/truncated .ico
+		// (previously this path could reach &pngNN[0] on an empty vector below).
+		C_BLOB emptyResult;
+		emptyResult.toParamAtIndex(pParams, 2);
+		return;
+	}
 	
 	//https://msdn.microsoft.com/en-us/library/ms997538.aspx
 	//http://hiroshi0945.seesaa.net/article/162310812.html

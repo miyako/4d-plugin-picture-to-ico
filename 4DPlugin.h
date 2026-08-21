@@ -13,9 +13,33 @@
 // --- PICTURE TO ICO
 void PICTURE_TO_ICO(sLONG_PTR *pResult, PackagePtr pParams);
 
+// 4D internal language command IDs invoked via PA_ExecuteCommandByID.
+// Named here instead of left as bare literals at each call site; if 4D ever
+// renumbers these between versions, this is the single place to update.
+// NOTE: the names below are inferred from the argument shape at each call
+// site (a Picture in/out plus two Longint dimensions; a Picture plus a
+// format-name Unistring) — not verified against 4D's own command ID table.
+// Confirm the real names before relying on the comment rather than the value.
+#define kCommandID_PICTURE_SCALED_SIZE 679  // believed to resize args[0] into args[1] to args[2] x args[3]
+#define kCommandID_SET_PICTURE_FORMAT  1002 // believed to convert args[0] to the format named by args[1]
+
 #if VERSIONWIN
-#include <gdiplus.h>
+// windows.h must come first: gdiplus.h's own headers (GdiplusBitmap.h,
+// GdiplusHeaders.h, GdiplusImaging.h, etc.) reference BOOL, HDC, IStream, and
+// PROPID, all of which are declared by windows.h (and the COM headers it
+// pulls in) — not by gdiplus.h itself. Including gdiplus.h first left those
+// types undeclared, which a newer Windows SDK (10.0.26100.0) surfaced as a
+// hard compile failure (104 errors, all inside the Gdiplus* headers) rather
+// than something that happened to work before.
+//
+// Note: Gdiplus:: is not actually referenced anywhere in this plugin's own
+// source (the resizing/format-conversion work is delegated to 4D's own
+// internal commands via PA_ExecuteCommandByID) — if that stays true, both
+// this #include and the "gdiplus.lib" link dependency below could be
+// removed entirely rather than just reordered. Left in place here since
+// removing a link dependency is a bigger change than fixing the build.
 #include <windows.h>
+#include <gdiplus.h>
 #pragma comment (lib, "gdiplus.lib") 
 #endif
 
