@@ -24,23 +24,28 @@ void PICTURE_TO_ICO(sLONG_PTR *pResult, PackagePtr pParams);
 #define kCommandID_SET_PICTURE_FORMAT  1002 // believed to convert args[0] to the format named by args[1]
 
 #if VERSIONWIN
-// windows.h must come first: gdiplus.h's own headers (GdiplusBitmap.h,
-// GdiplusHeaders.h, GdiplusImaging.h, etc.) reference BOOL, HDC, IStream, and
-// PROPID, all of which are declared by windows.h (and the COM headers it
-// pulls in) — not by gdiplus.h itself. Including gdiplus.h first left those
-// types undeclared, which a newer Windows SDK (10.0.26100.0) surfaced as a
-// hard compile failure (104 errors, all inside the Gdiplus* headers) rather
-// than something that happened to work before.
+// gdiplus.h/gdiplus.lib removed: they were never referenced anywhere in this
+// plugin's own source (resizing/format-conversion is delegated to 4D's own
+// internal commands via PA_ExecuteCommandByID, not to direct Gdiplus:: calls)
+// and including gdiplus.h here reliably failed to compile against Windows SDK
+// 10.0.26100.0 (104 errors: IStream/PROPID/HDC/BOOL all "undeclared" inside
+// gdiplus.h's own headers).
 //
-// Note: Gdiplus:: is not actually referenced anywhere in this plugin's own
-// source (the resizing/format-conversion work is delegated to 4D's own
-// internal commands via PA_ExecuteCommandByID) — if that stays true, both
-// this #include and the "gdiplus.lib" link dependency below could be
-// removed entirely rather than just reordered. Left in place here since
-// removing a link dependency is a bigger change than fixing the build.
+// An earlier fix in this file reordered "#include <gdiplus.h>" after
+// "#include <windows.h>", on the theory that gdiplus.h's headers needed
+// windows.h's types declared first. That reorder had no effect (a rebuild
+// against the exact same tag reproduced the identical 104 errors) because
+// windows.h was already being fully expanded earlier in the translation
+// unit, via 4DPluginAPI.h's own "#if VERSIONWIN / #include <windows.h>"
+// block (4DPlugin.cpp includes "4DPluginAPI.h" before "4DPlugin.h") — so by
+// the time either include in this file ran, windows.h's own include guard
+// made the local "#include <windows.h>" a no-op regardless of its position.
+// The real incompatibility is with gdiplus.h itself against this SDK
+// version, in a way this review can't further diagnose without a Windows/
+// MSVC toolchain to test against — so the dependency is removed rather than
+// reordered again. windows.h itself is kept: WORD/DWORD/BYTE/LONG below are
+// still expected from it on this platform.
 #include <windows.h>
-#include <gdiplus.h>
-#pragma comment (lib, "gdiplus.lib") 
 #endif
 
 #if VERSIONMAC
