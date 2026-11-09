@@ -8,6 +8,75 @@
 
 **Platforms:** macOS (Carbon and Cocoa) and Windows (32-bit and 64-bit).
 
+## Source versions and manual publication
+
+**Bump version** is manual and source-only. Select the explicit branch in Actions
+and choose `patch`, `minor`, or `major`. It checks out the immutable dispatch SHA,
+requires a clean checkout and an unchanged remote branch, validates coordinated
+metadata, and commits a direct child to that branch. A mandatory executable
+pre-push guard checks Git's actual advertised old SHA, literal new SHA, HEAD,
+parent, target and exactly one update. Missing/nonexecutable guards fail closed
+both before preparation and immediately before push. Late advances, ancestor
+rewinds, deletions and same-result races are rejected. Pushes are non-force with
+both `push.followTags=false` and `--no-follow-tags`: no tags or automatic Build.
+
+The version authority is the single strict `X.Y.Z` in all six source
+`MARKETING_VERSION` settings. The previous Bump header explicitly promised a
+coordinated marketing/current/plist version, despite its marketing-first
+implementation leaving `CURRENT_PROJECT_VERSION` stale. This migration keeps
+the existing **1.0.6** marketing/plist authority and repairs the six stale
+`1.0.4` current settings and source English `1.0` strings to **1.0.6**, without
+incrementing the release version. Future bumps co-update both project keys,
+present literal plist version keys and the two localized version strings.
+Valid version references, absent `CFBundleVersion`, BOMs, line endings and
+file modes are preserved. Prebuilt test plugins, native dependencies, 4D
+projects, manifests, schemas and localization counters are not version inputs.
+
+**Build** is a separate manual workflow with **zero inputs**; select the desired
+branch or ref in Actions. Every job checks out the same `github.sha`, never an
+existing tag. It validates source metadata and remote publication availability
+before building Windows x64 and macOS universal arm64/x86_64. The existing
+Windows artifact, canonical `test/Plugins/PICTURE TO ICO.bundle` layout,
+universal verification, Developer ID signing/verification, ZIP/DMG notarization
+and DMG stapling remain mandatory. Final assets are
+`PICTURE TO ICO-X.Y.Z.zip` and `PICTURE TO ICO-X.Y.Z.dmg`.
+
+Publication uses one repository-wide cross-branch concurrency group without
+cancelling running work. Early and final checks (after all native/sign/notary/
+staple gates) require an absent remote tag and a complete authenticated,
+paginated releases listing **including drafts**. HTTP 404, authentication,
+network, malformed responses and later-page failures stop publication.
+The tag is created once at the selected SHA using `POST git/refs`, then verified
+remotely; even a same-SHA tag race fails. A separate create-only release POST
+sets the exact tag, target SHA, name, `draft=false`, `prerelease=false` and empty
+body, preserving the original notes policy. Assets are uploaded separately to
+the newly returned release ID. No update, clobber, deletion, rollback or retry
+is performed.
+
+**Manual recovery:** failures can leave a tag, release and/or earlier uploaded
+assets intact. Inspect the reported SHA, tag and release ID before taking any
+manual action; do not rerun expecting overwrite or automatic cleanup. A draft
+also reserves its version. Resolve partial state deliberately, or dispatch a
+source bump and Build a new version. No production publication is performed
+by local lifecycle tests.
+
+**Existing native caveats:** the source includes the 4D Plugin API and delegates
+PNG conversion/resizing to 4D; the checked-in libpng/qrencode headers are not
+active linked dependencies. macOS links Cocoa, AppKit and CoreGraphics. Legacy
+Windows configurations declare v100/Windows7.1SDK, while the retained Build
+explicitly selects v143 and Windows SDK 10.0 for x64; legacy Win32 is not an
+additional workflow job. The source already removed unused GDI+ after SDK
+header failures. Xcode's target/project deployment settings (11.5/26.0) differ
+from the retained workflow override (11.0), and packaging still notarizes both
+archives and staples only the DMG. These native compatibility and packaging
+constraints are not bypassed or changed by this migration. Build requires the
+existing signing/notary secret names and working Apple credentials.
+
+Local lifecycle checks: `actionlint` and
+`PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s .github/tests -v`.
+Tests use temporary source copies, bare Git remotes and mocked publication APIs;
+they do not execute native builds, signing or release operations.
+
 ---
 
 ## Requirements & platform notes
