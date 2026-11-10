@@ -11,6 +11,7 @@
 
 #include "4DPluginAPI.h"
 #include "4DPlugin.h"
+#include "CommandArguments.h"
 
 void PluginMain(PA_long32 selector, PA_PluginParameters params)
 {
@@ -118,8 +119,8 @@ void getBMP(PA_Picture *picture, std::vector<uint8_t> &buf)
 // so the caller can stop instead of feeding a possibly-invalid picture into getPNG.
 static bool scaleOneIcon(PA_Picture *picture, PA_long32 outSize, PA_Picture &outIcon)
 {
-	PA_Variable args[4];
-	args[0] = PA_CreateVariable(eVK_Picture);
+	CommandArguments<4> arguments;
+	PA_Variable *args = arguments.values;
 	args[1] = PA_CreateVariable(eVK_Picture);
 	args[2] = PA_CreateVariable(eVK_Longint);
 	args[3] = PA_CreateVariable(eVK_Longint);
@@ -128,17 +129,11 @@ static bool scaleOneIcon(PA_Picture *picture, PA_long32 outSize, PA_Picture &out
 	PA_SetLongintVariable(&args[2], outSize);
 	PA_SetLongintVariable(&args[3], outSize);
 
-	PA_ExecuteCommandByID(kCommandID_PICTURE_SCALED_SIZE, args, 4);
-	bool ok = (PA_GetLastError() == eER_NoErr);
+	bool ok = (arguments.execute(kCommandID_PICTURE_SCALED_SIZE) == eER_NoErr);
 	if (ok)
 	{
 		outIcon = PA_DuplicatePicture(PA_GetPictureVariable(args[1]), 1);
 	}
-
-	PA_ClearVariable(&args[0]);
-	PA_ClearVariable(&args[1]);
-	PA_ClearVariable(&args[2]);
-	PA_ClearVariable(&args[3]);
 
 	return ok;
 }
@@ -200,9 +195,8 @@ void PICTURE_TO_ICO(sLONG_PTR *pResult, PackagePtr pParams)
 	PA_Picture picture = *(PA_Picture *)(pParams[0]);
 	
 	//convert to png
-	PA_Variable args[2];
-	args[0] = PA_CreateVariable(eVK_Picture);
-	args[1] = PA_CreateVariable(eVK_Unistring);
+	CommandArguments<2> arguments;
+	PA_Variable *args = arguments.values;
 	PA_SetPictureVariable(&args[0], PA_DuplicatePicture(picture, 1));
 	// Compiler-verified UTF-16 literal (previously a hand-built interleaved-null
 	// narrow-string literal cast to PA_Unichar* — correct today, but a single
@@ -211,11 +205,8 @@ void PICTURE_TO_ICO(sLONG_PTR *pResult, PackagePtr pParams)
 	static const char16_t kPngExt[] = u".png";
 	PA_Unistring u = PA_CreateUnistring((PA_Unichar *)kPngExt);
 	PA_SetStringVariable(&args[1], &u);
-	PA_ExecuteCommandByID(kCommandID_SET_PICTURE_FORMAT, args, 2);
-	bool convertedToPNG = (PA_GetLastError() == eER_NoErr);
-	picture = PA_DuplicatePicture(PA_GetPictureVariable(args[0]), 1);
-	PA_ClearVariable(&args[0]);
-	PA_ClearVariable(&args[1]);
+	bool convertedToPNG = (arguments.execute(kCommandID_SET_PICTURE_FORMAT) == eER_NoErr);
+	picture = convertedToPNG ? PA_DuplicatePicture(PA_GetPictureVariable(args[0]), 1) : NULL;
 
 	std::vector<uint8_t> png16;
 	std::vector<uint8_t> png32;
@@ -341,4 +332,3 @@ void PICTURE_TO_ICO(sLONG_PTR *pResult, PackagePtr pParams)
 	Param2.setBytes((const uint8_t *)&ico[0], iconsize);
 	Param2.toParamAtIndex(pParams, 2);
 }
-
