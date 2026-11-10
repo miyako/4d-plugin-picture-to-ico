@@ -75,7 +75,13 @@ existing signing/notary secret names and working Apple credentials.
 Local lifecycle checks: `actionlint` and
 `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s .github/tests -v`.
 Tests use temporary source copies, bare Git remotes and mocked publication APIs;
-they do not execute native builds, signing or release operations.
+they do not execute project builds, signing or release operations. On macOS,
+`python3 .github/tests/test_ownership.py -v` separately compiles the actual
+native sources and complete pinned SDK into an unsigned ASan/UBSan synthetic
+host. See the [ownership audit](.github/tests/ownership-audit.md) for the full
+native inventory, baseline comparison, corrected wrapper contracts and explicit
+OOM/metadata/Windows/4D-host validation limits. Checked-in plugin binaries are
+not rebuilt by these checks.
 
 ---
 
